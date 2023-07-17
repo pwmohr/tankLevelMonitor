@@ -6,7 +6,6 @@
 
   The web server code was adapted from example code "WiFi Web Server LED Blink" 
   written by Tom Igoe, 25 Nov 2012.
-
  */
 
 // Included Files

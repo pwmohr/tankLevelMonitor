@@ -24,11 +24,12 @@
 #define DEPTH_CURRENT_MIN       (4.0)   // (mA) - Depth sensor current at 0mm
 #define DEPTH_CURRENT_MAX       (20.0)  // (mA) - Depth sensor current at 5000mm
 #define NRM_LIQUID_DENSITY      (1.0)   // (--) - Liquid density, normalized to the density of water
-#define ADC_VREF                (5000)  // (mV) - ADC reference voltage
+#define ADC_VREF                (5.0)   // (V) - ADC reference voltage
+#define ADC_MAX_VALUE           (1024.0) // (--) - 10 bit A to D converter
 
 // Global Variables
 WiFiServer webServer(80);
-StaticJsonDocument<32> data;    // the object that stores our JSON data
+StaticJsonDocument<64> data;    // the object that stores our JSON data
 
 // Function Prototypes
 void setupWebServer();
@@ -39,8 +40,9 @@ float readDepthSensor();
 // Setup (runs once after power-on or system reset)
 void setup() 
 {
-  data["tankDepth"] = 1234.0;
+  data["tankDepth"] = 0.0;
   data["units"] = "m";
+  data["status"] = "okay";
   Serial.begin(9600);       // Initialize serial communication for debug purposes
   setupWebServer();         // Start web server and attempt to connect to WiFi
 }
@@ -49,14 +51,32 @@ void setup()
 void loop() 
 {
   // read the depth sensor voltage from the ADC
+  int adcVal;
+  float voltage;
+  float depth;
+  adcVal = analogRead(DEPTH_SENSOR_INPUT_PIN);
+  
 
-  // convert the 0-1024 ADC value into a Sensed Voltage (mV)
+  // convert the 0-1024 ADC value into a Sensed Voltage (V)
+  voltage = (adcVal/ADC_MAX_VALUE)*ADC_VREF;
+  if (voltage < 0.48 || voltage > 2.4) {
+    data["status"] = "unexpected voltage";
+  }
+  else {
+    // convert Sensed Voltage (V) into Sensor Current (mA)
+    // (The converter board resistor across which we measure the voltage is 120 ohms.)
+    // convert Sensor Current (mA) into depth (for this sensor 4mA corresponds to 0mm of depth,
+    // and 20mA corresponds to 5m of depth)
+    depth = 2.604 * voltage - 1.25;
+    data["tankDepth"] = depth;
+    data["status"] = "okay";
+  }
 
-  // convert Sensed Voltage (mV) into Sensor Current (mA)
+  // convert Sensed Voltage (V) into Sensor Current (mA)
   // (The converter board resistor across which we measure the voltage is 120 ohms.)
-
   // convert Sensor Current (mA) into depth (for this sensor 4mA corresponds to 0mm of depth,
-  // and 20mA corresponds to 5000mm of depth)
+  // and 20mA corresponds to 5m of depth)
+  depth = 2.604 * voltage - 1.25;
 
   // Process any incoming web requests
   processWebRequests();

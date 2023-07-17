@@ -5,26 +5,42 @@
     2) Creates a web server to make the data available on the home network.
 
   The web server code was adapted from example code "WiFi Web Server LED Blink" 
-  written by Tom Igoe, 25 Nov 2012.
+  originally written by Tom Igoe and dated 25 Nov 2012.
+
  */
 
 // Included Files
 #include <WiFiNINA.h>
 #include "arduino_secrets.h"
-// Must #define your SECRET_SSID and SECRET_PASS in "arduino_secrets.h"
+#include <ArduinoJson.h>
+
+// Must #define SECRET_SSID and SECRET_PASS in "arduino_secrets.h"
 // Once done, take care to NOT commit that file into a publicly-viewable space (e.g., GitHub)
 
+// Defined Constants
+#define DEPTH_SENSOR_INPUT_PIN  (A0)    // (--) - ADC pin to which we connect the sensor output
+#define DEPTH_MEASUREMENT_MAX   (5000)  // (mm) - Maximum depth measurement
+#define DEPTH_MEASUREMENT_MIN   (0)     // (mm) - Minimum depth measurement
+#define DEPTH_CURRENT_MIN       (4.0)   // (mA) - Depth sensor current at 0mm
+#define DEPTH_CURRENT_MAX       (20.0)  // (mA) - Depth sensor current at 5000mm
+#define NRM_LIQUID_DENSITY      (1.0)   // (--) - Liquid density, normalized to the density of water
+#define ADC_VREF                (5000)  // (mV) - ADC reference voltage
+
 // Global Variables
-WiFiServer server(80);
+WiFiServer webServer(80);
+StaticJsonDocument<32> data;    // the object that stores our JSON data
 
 // Function Prototypes
 void setupWebServer();
 void printWiFiStatus();
 void processWebRequests();
+float readDepthSensor();
 
-// Setup (runs once at power-on or system reset)
+// Setup (runs once after power-on or system reset)
 void setup() 
 {
+  data["tankDepth"] = 1234.0;
+  data["units"] = "m";
   Serial.begin(9600);       // Initialize serial communication for debug purposes
   setupWebServer();         // Start web server and attempt to connect to WiFi
 }
@@ -32,11 +48,15 @@ void setup()
 // Loop (runs forever after)
 void loop() 
 {
-  // Read the sensor
+  // read the depth sensor voltage from the ADC
 
-  // Convert results to meaningful units (e.g., feet, gallons, % full)
+  // convert the 0-1024 ADC value into a Sensed Voltage (mV)
 
-  // Send the results to another computer on the network for logging
+  // convert Sensed Voltage (mV) into Sensor Current (mA)
+  // (The converter board resistor across which we measure the voltage is 120 ohms.)
+
+  // convert Sensor Current (mA) into depth (for this sensor 4mA corresponds to 0mm of depth,
+  // and 20mA corresponds to 5000mm of depth)
 
   // Process any incoming web requests
   processWebRequests();
@@ -64,7 +84,8 @@ void printWifiStatus()
 }
 
 // Initialize the web server and attempt to connect to the local wifi network
-// This function does not return until it succeeds.
+// This function does not return until it succeeds, so if the connection 
+// isn't possible, nothing else will happen.
 void setupWebServer()
 {
   char ssid[] = SECRET_SSID;        // your network SSID (name)
@@ -100,13 +121,13 @@ void setupWebServer()
         delay(980);
     }
   }
-  server.begin();                           // start the web server on port 80
+  webServer.begin();                           // start the web server on port 80
   printWifiStatus();                        // you're connected now, so print out the status
 }
 
 void processWebRequests()
 {
-    WiFiClient client = server.available();   // listen for incoming clients
+  WiFiClient client = webServer.available();   // listen for incoming clients
 
   if (client) {                             // if you get a client,
     Serial.println("new client");           // print a message out the serial port
@@ -115,10 +136,12 @@ void processWebRequests()
       if (client.available()) {             // if there's bytes to read from the client,
         char c = client.read();             // read a byte, then
         Serial.write(c);                    // print it out to the serial monitor
-        if (c == '\n') {                    // if the byte is a newline character
 
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
+        // Check to see if the byte is a newline character
+        if (c == '\n') 
+        {
+          // if the current line is blank, it means we got two newline characters in a row.
+          // that signals the end of the client HTTP request, so send a response:
           if (currentLine.length() == 0) {
             // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
             // and a content-type so the client knows what's coming, then a blank line:
@@ -126,27 +149,27 @@ void processWebRequests()
             client.println("Content-type:text/html");
             client.println();
 
-            // the content of the HTTP response follows the header:
-            client.print("Click <a href=\"/H\">here</a> turn the LED on pin 2 on<br>");
-            client.print("Click <a href=\"/L\">here</a> turn the LED on pin 2 off<br>");
+            // the content of the HTTP response follows the header. In this case we are going
+            // to send the data in JSON format
+            serializeJson(data, client);
 
             // The HTTP response ends with another blank line:
             client.println();
+            // we are all done with this interaction, so 
             // break out of the while loop:
             break;
-          } else {    // if you got a newline, then clear currentLine:
+          } 
+          else 
+          { 
+            // the currentLine was not blank, so the newline character means
+            // we should start building a new line
             currentLine = "";
           }
-        } else if (c != '\r') {  // if you got anything else but a carriage return character,
-          currentLine += c;      // add it to the end of the currentLine
-        }
-
-        // Check to see if the client request was "GET /H" or "GET /L":
-        if (currentLine.endsWith("GET /H")) {
-          // digitalWrite(ledPin, HIGH);               // GET /H turns the LED on
-        }
-        if (currentLine.endsWith("GET /L")) {
-          // digitalWrite(ledPin, LOW);                // GET /L turns the LED off
+        } 
+        else if (c != '\r') 
+        {  
+          // if we got anyting else but a carriage return character, add it to the currentLine
+          currentLine += c;
         }
       }
     }

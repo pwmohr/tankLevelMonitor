@@ -11,8 +11,8 @@
 
 // Included Files
 #include <WiFiNINA.h>
-#include "arduino_secrets.h"
 #include <ArduinoJson.h>
+#include "arduino_secrets.h"
 
 // Must #define SECRET_SSID and SECRET_PASS in "arduino_secrets.h"
 // Once done, take care to NOT commit that file into a publicly-viewable space (e.g., GitHub)
@@ -48,7 +48,7 @@ void setup()
   data["units"] = "m";
   data["status"] = "okay";
   Serial.begin(9600);       // Initialize serial communication for debug purposes
-  setupWebServer();         // Start web server and attempt to connect to WiFi
+  //setupWebServer();         // Start web server and attempt to connect to WiFi
 }
 
 // Loop (runs forever after)
@@ -74,10 +74,13 @@ void loop()
     depth = DEPTH_OVER_VOLTAGE * voltage + DEPTH_OFFSET;
     data["tankDepth"] = depth;
     data["status"] = "okay";
+
+    Serial.print("Depth:");
+    Serial.println(adcVal); // TODO: replace this with depth
   }
 
   // Process any incoming web requests
-  processWebRequests();
+  //processWebRequests();
 }
 
 void printWifiStatus() 

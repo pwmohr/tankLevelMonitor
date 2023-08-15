@@ -18,18 +18,18 @@
 // Once done, take care to NOT commit that file into a publicly-viewable space (e.g., GitHub)
 
 // Defined Constants
-#define DEPTH_SENSOR_INPUT_PIN  (A0)    // (--) - ADC pin to which we connect the sensor output
-#define DEPTH_MEASUREMENT_MAX   (5.0)   // (m) - Maximum depth measurement
-#define DEPTH_MEASUREMENT_MIN   (0.0)   // (m) - Minimum depth measurement
-#define DEPTH_CURRENT_MIN       (4.0)   // (mA) - Depth sensor current at 0mm
-#define DEPTH_CURRENT_MAX       (20.0)  // (mA) - Depth sensor current at 5000mm
-#define NRM_LIQUID_DENSITY      (1.0)   // (--) - Liquid density, normalized to the density of water
-#define ADC_VREF                (5.0)   // (V) - ADC reference voltage
-#define ADC_MAX_VALUE           (1024.0) // (--) - 10 bit A to D converter
-#define SENSOR_VOLTAGE_MIN      (0.48)  // (V) - any lower voltage is an error
-#define SENSOR_VOLTAGE_MAX      (2.4)   // (V) - any higher voltage is an error
-#define DEPTH_OVER_VOLTAGE      (2.604) // (m/V) - slope of voltage to depth conversion
-#define DEPTH_OFFSET            (-1.25) // (m) - y intercept of voltage to depth conversion
+#define DEPTH_SENSOR_INPUT_PIN  (A0)      // (--) - ADC pin to which we connect the sensor output
+#define SENSE_RESISTOR          (500)     // Ohms
+#define DEPTH_TO_CURRENT_SLOPE  (0.0032)  // A / m
+#define DEPTH_TO_CURRENT_OFFSET (0.004)   // A
+#define VOLTAGE_TO_ADC_SLOPE    (204.8)   // ADC counts / V
+
+// Use the above constants to compute at compile time, the constants we need to directly convert
+// ADC value into depth (m) and to check to for a low-current fault
+#define MIN_VALID_ADC_READING   (VOLTAGE_TO_ADC_SLOPE*SENSE_RESISTOR*DEPTH_TO_CURRENT_OFFSET)
+#define ADC_TO_DEPTH_SLOPE      (VOLTAGE_TO_ADC_SLOPE*SENSE_RESISTOR*DEPTH_TO_CURRENT_SLOPE)
+
+#define ENABLE_WEB_SERVER
 
 // Global Variables
 WiFiServer webServer(80);
@@ -40,15 +40,18 @@ void setupWebServer();
 void printWiFiStatus();
 void processWebRequests();
 float readDepthSensor();
+float convertAdcToDepth( int adc );
 
 // Setup (runs once after power-on or system reset)
 void setup() 
 {
   data["tankDepth"] = 0.0;
   data["units"] = "m";
-  data["status"] = "okay";
+  data["status"] = "OK";
   Serial.begin(9600);       // Initialize serial communication for debug purposes
-  //setupWebServer();         // Start web server and attempt to connect to WiFi
+#ifdef ENABLE_WEB_SERVER
+  setupWebServer();         // Start web server and attempt to connect to WiFi
+#endif
 }
 
 // Loop (runs forever after)
@@ -59,28 +62,39 @@ void loop()
   float voltage;
   float depth;
   adcVal = analogRead(DEPTH_SENSOR_INPUT_PIN);
+  depth = convertAdcToDepth(adcVal);
   
+//  Serial.print("Min:0, Max:1024");
+//  Serial.print("ADC:");
+//  Serial.print(adcVal);
+  Serial.print("Min:0.0, Max:5.0");
+  Serial.print(", Depth:");
+  Serial.println(depth);
 
-  // convert the 0-1024 ADC value into a Sensed Voltage (V)
-  voltage = (adcVal/ADC_MAX_VALUE)*ADC_VREF;
-  if (voltage < SENSOR_VOLTAGE_MIN || voltage > SENSOR_VOLTAGE_MAX) {
-    data["status"] = "unexpected voltage";
-  }
-  else {
-    // convert Sensed Voltage (V) into Sensor Current (mA)
-    // (The converter board resistor across which we measure the voltage is 120 ohms.)
-    // convert Sensor Current (mA) into depth (for this sensor 4mA corresponds to 0mm of depth,
-    // and 20mA corresponds to 5m of depth)
-    depth = DEPTH_OVER_VOLTAGE * voltage + DEPTH_OFFSET;
-    data["tankDepth"] = depth;
-    data["status"] = "okay";
-
-    Serial.print("Depth:");
-    Serial.println(adcVal); // TODO: replace this with depth
-  }
-
+#ifdef ENABLE_WEB_SERVER
   // Process any incoming web requests
-  //processWebRequests();
+  processWebRequests();
+#endif
+}
+
+float convertAdcToDepth( int adc )
+{
+
+  float d;
+
+  d = (adc - MIN_VALID_ADC_READING) / ADC_TO_DEPTH_SLOPE;
+
+  if( adc < MIN_VALID_ADC_READING )
+  {
+    data["status"] = "Fault";
+  }
+  else
+  {
+    data["tankDepth"] = d;
+    data["status"] = "OK";
+  }
+
+  return d;
 }
 
 void printWifiStatus() 
@@ -131,7 +145,6 @@ void setupWebServer()
   while (status != WL_CONNECTED) {
     Serial.print("Attempting to connect to Network named: ");
     Serial.println(ssid);                   // print the network name (SSID);
-
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     status = WiFi.begin(ssid, pass);
     // Blink LED_BUILTIN while waiting 10 seconds for connection:

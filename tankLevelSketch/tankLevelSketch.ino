@@ -72,6 +72,9 @@ void loop()
   Serial.println(depth);
 
 #ifdef ENABLE_WEB_SERVER
+  if( WiFi.status() != WL_CONNECTED ) {
+    setupWebServer();
+  }
   // Process any incoming web requests
   processWebRequests();
 #endif
